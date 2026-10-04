@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MXR 4 Stage Phaser — Simple Demonstration</title>
+<style>
+  :root { --bg:#050b0d; --panel:#081317; --grid:#17333a; --text:#d9fff2; --muted:#78a89a; --accent:#28f0a8; }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    min-height:100vh;
+  }
+  header { padding:18px 22px 8px; border-bottom:1px solid #17404a; }
+  h1 { margin:0 0 5px; font-size:22px; color:var(--accent); }
+  .subtitle { color:var(--muted); font-size:12px; }
+  main { padding:14px; max-width:1500px; margin:auto; }
+  .grid { display:grid; grid-template-columns:minmax(0,1.45fr) minmax(360px,.9fr); gap:12px; }
+  .panel {
+    background:linear-gradient(180deg,#09161a,#061013);
+    border:1px solid #15505d; border-radius:8px; padding:12px;
+    box-shadow:0 0 20px rgba(0,255,180,.035) inset;
+  }
+  .panel h2 { margin:0 0 8px; font-size:14px; color:#5dffd0; }
+  canvas { width:100%; display:block; background:#03090b; border:1px solid #12333a; border-radius:5px; }
+  #scope { height:540px; }
+  #spectrum { height:360px; }
+  #lfo { height:150px; }
+  .controls {
+    display:grid; grid-template-columns:repeat(6,minmax(120px,1fr)); gap:12px;
+    margin-top:12px;
+  }
+  .control { min-width:0; }
+  label { display:block; font-size:11px; color:#9ed0c2; margin-bottom:7px; }
+  output { display:block; text-align:center; color:#fff; font-size:12px; margin-top:5px; }
+  input[type=range] { width:100%; accent-color:#24e7a3; }
+  .buttons { display:flex; gap:7px; flex-wrap:wrap; }
+  button {
+    font:inherit; font-size:11px; color:#bdeee0; background:#081c22;
+    border:1px solid #1d6471; border-radius:5px; padding:8px 12px; cursor:pointer;
+  }
+  button:hover { border-color:#4af4c0; }
+  button.active { color:#03120d; background:#28f0a8; border-color:#28f0a8; }
+  .transport { margin-top:12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .status { margin-left:auto; color:#79aa9c; font-size:11px; }
+  .legend { display:flex; flex-wrap:wrap; gap:12px; font-size:10px; color:#9bbeb4; margin:6px 0 0; }
+  .dot { display:inline-block; width:9px; height:3px; vertical-align:middle; margin-right:4px; }
+  .explain { color:#9dbbb3; font-size:11px; line-height:1.55; }
+  .stage-readout {
+    display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-top:8px;
+  }
+  .stage {
+    border:1px solid #153f48; border-radius:5px; padding:7px;
+    font-size:10px; color:#8ec9b7;
+  }
+  .stage strong { display:block; font-size:12px; margin-bottom:3px; }
+  @media(max-width:950px) {
+    .grid { grid-template-columns:1fr; }
+    .controls { grid-template-columns:repeat(2,1fr); }
+  }
+  @media(max-width:520px) {
+    .controls { grid-template-columns:1fr; }
+    #scope { height:500px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>MXR 4 Stage Phase Shifter <span class="subtitle">(simplified educational model)</span></h1>
+  <div class="subtitle">Input → four modulated all-pass stages → feedback/mix → output</div>
+</header>
+
+<main>
+  <div class="grid">
+    <section class="panel">
+      <h2>TIME DOMAIN — waveforms through the phaser</h2>
+      <canvas id="scope"></canvas>
+      <div class="legend" id="scopeLegend"></div>
+    </section>
+
+    <section>
+      <div class="panel">
+        <h2>FREQUENCY DOMAIN — harmonics and moving notches</h2>
+        <canvas id="spectrum"></canvas>
+      </div>
+      <div class="panel" style="margin-top:12px">
+        <h2>LFO — controls the all-pass phase sweep</h2>
+        <canvas id="lfo"></canvas>
+        <div class="stage-readout">
+          <div class="stage"><strong style="color:#28e7a8">Stage 1</strong><span id="p1">—</span></div>
+          <div class="stage"><strong style="color:#65d9ff">Stage 2</strong><span id="p2">—</span></div>
+          <div class="stage"><strong style="color:#b888ff">Stage 3</strong><span id="p3">—</span></div>
+          <div class="stage"><strong style="color:#ff55a8">Stage 4</strong><span id="p4">—</span></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <section class="panel" style="margin-top:12px">
+    <h2>CONTROLS</h2>
+    <div class="controls">
+      <div class="control">
+        <label>INPUT SOURCE</label>
+        <div class="buttons">
+          <button id="synthBtn" class="active">Synth</button>
+          <button id="mp3Btn">MP3</button>
+        </div>
+        <output id="sourceOut">Synth</output>
+      </div>
+
+      <div class="control">
+        <label>INPUT WAVEFORM</label>
+        <div class="buttons">
+          <button id="sineBtn" class="active">Sine</button>
+          <button id="sawBtn">Sawtooth</button>
+        </div>
+        <output id="waveOut">Sine</output>
+      </div>
+
+      <div class="control">
+        <label>MP3 FILE</label>
+        <input id="mp3File" type="file" accept="audio/*" style="width:100%;font:10px ui-monospace,monospace;color:#bdeee0">
+        <output id="fileOut">No file loaded</output>
+      </div>
+
+      <div class="control">
+        <label for="freq">INPUT FREQUENCY</label>
+        <input id="freq" type="range" min="60" max="1200" value="220" step="1">
+        <output id="freqOut">220 Hz</output>
+      </div>
+
+      <div class="control">
+        <label for="rate">LFO SPEED</label>
+        <input id="rate" type="range" min="0.05" max="8" value="0.45" step="0.01">
+        <output id="rateOut">0.45 Hz</output>
+      </div>
+
+      <div class="control">
+        <label for="depth">PHASE SWEEP DEPTH</label>
+        <input id="depth" type="range" min="0" max="1" value="0.82" step="0.01">
+        <output id="depthOut">82%</output>
+      </div>
+
+      <div class="control">
+        <label for="feedback">FEEDBACK</label>
+        <input id="feedback" type="range" min="0" max="0.9" value="0.22" step="0.01">
+        <output id="feedbackOut">22%</output>
+      </div>
+
+      <div class="control">
+        <label for="mix">WET / DRY MIX</label>
+        <input id="mix" type="range" min="0" max="1" value="0.55" step="0.01">
+        <output id="mixOut">55% wet</output>
+      </div>
+    </div>
+
+    <div class="transport">
+      <button id="startBtn" class="active">Start Audio</button>
+      <button id="stopBtn">Stop</button>
+      <span class="status" id="status">Audio stopped — press Start Audio</span>
+    </div>
+  </section>
+<section class="panel" style="margin-top:12px">
+    <h2>USING AN MP3</h2>
+    <div class="explain">
+      Select <b>MP3</b>, choose a local audio file, then press <b>Start Audio</b>. The music follows the same four-stage phaser path as the synthesizer.
+      LFO speed, sweep depth, feedback and wet/dry mix therefore affect the music in real time. The file stays in your browser; it is not uploaded.
+    </div>
+  </section>
+
+  <section class="panel" style="margin-top:12px">
+    <h2>WHAT YOU ARE SEEING</h2>
+    <div class="explain">
+      Each all-pass stage changes the phase of different frequencies. The four stages are
+      modulated together by the low-frequency oscillator. The phase-shifted signal is then
+      mixed with the original dry signal. Where the two signals are out of phase they cancel,
+      creating the moving notches characteristic of a phaser. A sawtooth input contains many
+      harmonics, so those moving cancellations are much easier to see than with a pure sine.
+    </div>
+  </section>
+</main>
+
+<script>
+"use strict";
+
+/*
+  Educational 4-stage phaser.
+
+  This is intentionally simpler than a vintage MXR circuit. Each stage is a
+  first-order digital all-pass filter:
+
+      y[n] = -a*x[n] + x[n-1] + a*y[n-1]
+
+  with coefficient:
+      a = (1 - tan(pi*f_c/Fs)) / (1 + tan(pi*f_c/Fs))
+
+  The LFO moves f_c. Four stages are cascaded, then the shifted signal is
+  mixed with the dry signal. Feedback recirculates a portion of the shifted
+  signal through the four stages.
+*/
+
+const scope = document.getElementById("scope");
+const spectrumCanvas = document.getElementById("spectrum");
+const lfoCanvas = document.getElementById("lfo");
+const sctx = scope.getContext("2d");
+const fctx = spectrumCanvas.getContext("2d");
+const lctx = lfoCanvas.getContext("2d");
+
+const COLORS = ["#28e7a8","#65d9ff","#b888ff","#ffb52e","#ff55a8","#2ee9ff","#f4fff9"];
+
+let audioCtx = null;
+let osc = null;
+let oscGain = null;
+let mp3Gain = null;
+let mp3Buffer = null;
+let mp3Source = null;
+let mp3Offset = 0;
+let mp3StartedAt = 0;
+let mp3Loading = false;
+let master = null;
+let dryGain = null;
+let wetGain = null;
+let analyser = null;
+let scopeAnalysers = [];
+let mixAnalyser = null;
+let inputGain = null;
+let running = false;
+let sourceMode = "synth";
+let currentObjectURL = null;
+
+
+
+let waveform = "sine";
+let frequency = 220;
+let lfoRate = 0.45;
+let depth = 0.82;
+let feedback = 0.22;
+let mix = 0.55;
+let feedbackGain = null;
+let feedbackDelay = null;
+let lfoPhase = 0;
+let lastLfoTime = performance.now();
+
+const stageState = Array.from({length:4}, () => ({ x1:0, y1:0 }));
+let fbMemory = 0;
+
+const history = {
+  input: new Float32Array(1024),
+  s1: new Float32Array(1024),
+  s2: new Float32Array(1024),
+  s3: new Float32Array(1024),
+  s4: new Float32Array(1024),
+  mixed: new Float32Array(1024),
+  output: new Float32Array(1024)
+};
+
+function resizeCanvas(c) {
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  const r = c.getBoundingClientRect();
+  c.width = Math.round(r.width * dpr);
+  c.height = Math.round(r.height * dpr);
+  const ctx = c.getContext("2d");
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  return {w:r.width,h:r.height};
+}
+
+function resizeAll() {
+  resizeCanvas(scope);
+  resizeCanvas(spectrumCanvas);
+  resizeCanvas(lfoCanvas);
+}
+window.addEventListener("resize", resizeAll);
+resizeAll();
+
+function setOutput(id, text) {
+  document.getElementById(id).textContent = text;
+}
+
+function updateUI() {
+  setOutput("sourceOut", sourceMode === "synth" ? "Synth" : "MP3");
+  setOutput("waveOut", waveform === "sine" ? "Sine" : "Sawtooth");
+  setOutput("freqOut", `${frequency} Hz`);
+  setOutput("rateOut", `${lfoRate.toFixed(2)} Hz`);
+  setOutput("depthOut", `${Math.round(depth*100)}%`);
+  setOutput("feedbackOut", `${Math.round(feedback*100)}%`);
+  setOutput("mixOut", `${Math.round(mix*100)}% wet`);
+}
+
+function setSourceMode(mode) {
+  sourceMode = mode;
+  if (oscGain && mp3Gain && audioCtx) {
+    const t = audioCtx.currentTime;
+    oscGain.gain.setTargetAtTime(mode === "synth" ? 0.35 : 0, t, 0.015);
+    mp3Gain.gain.setTargetAtTime(mode === "mp3" ? 1 : 0, t, 0.015);
+  }
+  document.getElementById("synthBtn").classList.toggle("active", mode === "synth");
+  document.getElementById("mp3Btn").classList.toggle("active", mode === "mp3");
+  document.getElementById("sourceOut").textContent = mode === "synth" ? "Synth" : "MP3";
+}
+
+document.getElementById("synthBtn").onclick = () => setSourceMode("synth");
+
+document.getElementById("mp3Btn").onclick = () => {
+  if (!mp3Buffer) {
+    document.getElementById("status").textContent = "Choose an MP3/audio file first";
+    return;
+  }
+  setSourceMode("mp3");
+};
+
+document.getElementById("mp3File").onchange = async e => {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+
+  mp3Loading = true;
+  mp3Buffer = null;
+  mp3Offset = 0;
+  document.getElementById("fileOut").textContent = file.name;
+  document.getElementById("status").textContent = "Loading and decoding audio…";
+
+  try {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    const arrayBuffer = await file.arrayBuffer();
+    mp3Buffer = await audioCtx.decodeAudioData(arrayBuffer.slice(0));
+    setSourceMode("mp3");
+    document.getElementById("status").textContent =
+      `Audio ready — ${mp3Buffer.duration.toFixed(1)} seconds. Press Start Audio`;
+  } catch (err) {
+    console.error("Audio decode error:", err);
+    mp3Buffer = null;
+    document.getElementById("status").textContent =
+      "Could not decode this file. Try an MP3, WAV, M4A or OGG file.";
+  } finally {
+    mp3Loading = false;
+  }
+};
+
+function stopMP3Source() {
+  if (!mp3Source) return;
+  try { mp3Source.stop(); } catch (_) {}
+  try { mp3Source.disconnect(); } catch (_) {}
+  mp3Source = null;
+}
+
+function startMP3Source() {
+  if (!mp3Buffer || !audioCtx) return false;
+
+  stopMP3Source();
+
+  mp3Source = audioCtx.createBufferSource();
+  mp3Source.buffer = mp3Buffer;
+  mp3Source.connect(mp3Gain);
+
+  if (mp3Offset >= mp3Buffer.duration - 0.01) mp3Offset = 0;
+
+  mp3StartedAt = audioCtx.currentTime;
+  mp3Source.start(0, mp3Offset);
+
+  mp3Source.onended = () => {
+    if (mp3Source) {
+      mp3Offset = 0;
+      mp3Source = null;
+      if (sourceMode === "mp3") {
+        document.getElementById("status").textContent =
+          "MP3 finished — press Start Audio to replay";
+      }
+    }
+  };
+  return true;
+}
+
+document.getElementById("sineBtn").onclick = () => {
+  waveform = "sine";
+  document.getElementById("sineBtn").classList.add("active");
+  document.getElementById("sawBtn").classList.remove("active");
+  if (osc) osc.type = "sine";
+  updateUI();
+};
+
+document.getElementById("sawBtn").onclick = () => {
+  waveform = "sawtooth";
+  document.getElementById("sawBtn").classList.add("active");
+  document.getElementById("sineBtn").classList.remove("active");
+  if (osc) osc.type = "sawtooth";
+  updateUI();
+};
+
+document.getElementById("freq").oninput = e => {
+  frequency = +e.target.value;
+  if (osc) osc.frequency.setTargetAtTime(frequency, audioCtx.currentTime, 0.01);
+  updateUI();
+};
+document.getElementById("rate").oninput = e => { lfoRate = +e.target.value; updateUI(); };
+document.getElementById("depth").oninput = e => { depth = +e.target.value; updateUI(); };
+document.getElementById("feedback").oninput = e => {
+  feedback = +e.target.value;
+  if (feedbackGain && audioCtx) feedbackGain.gain.setTargetAtTime(feedback, audioCtx.currentTime, 0.02);
+  updateUI();
+};
+document.getElementById("mix").oninput = e => {
+  mix = +e.target.value;
+  if (wetGain && dryGain) {
+    const t = audioCtx.currentTime;
+    wetGain.gain.setTargetAtTime(mix, t, 0.015);
+    dryGain.gain.setTargetAtTime(1-mix, t, 0.015);
+  }
+  updateUI();
+};
+
+function makeStage() {
+  const input = audioCtx.createGain();
+  const output = audioCtx.createGain();
+  const ap = audioCtx.createBiquadFilter();
+  // Browser BiquadFilter ALLPASS is a stable and efficient approximation.
+  ap.type = "allpass";
+  ap.frequency.value = 1000;
+  ap.Q.value = 0.707;
+  input.connect(ap);
+  ap.connect(output);
+  return {input, ap, output};
+}
+
+let stages = [];
+
+function createAudio() {
+  if (stages.length) return;
+
+  audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+
+  osc = audioCtx.createOscillator();
+  osc.type = waveform;
+  osc.frequency.value = frequency;
+
+  oscGain = audioCtx.createGain();
+  oscGain.gain.value = sourceMode === "synth" ? 0.35 : 0;
+
+  // Decoded MP3 audio is connected here when the MP3 source is selected.
+  mp3Gain = audioCtx.createGain();
+  mp3Gain.gain.value = sourceMode === "mp3" ? 1 : 0;
+
+  inputGain = audioCtx.createGain();
+  dryGain = audioCtx.createGain();
+  wetGain = audioCtx.createGain();
+  feedbackGain = audioCtx.createGain();
+
+  inputGain.gain.value = 1;
+  dryGain.gain.value = 1 - mix;
+  wetGain.gain.value = mix;
+  feedbackGain.gain.value = feedback;
+
+  master = audioCtx.createGain();
+  master.gain.value = 0.7;
+
+  analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 4096;
+  analyser.smoothingTimeConstant = 0.15;
+
+  // Separate analyser taps for the educational time-domain display.
+  // These do not alter the audio path; they simply observe the real signal
+  // at the input and after each actual phaser stage.
+  scopeAnalysers = [];
+  const makeScopeAnalyser = () => {
+    const a = audioCtx.createAnalyser();
+    a.fftSize = 2048;
+    a.smoothingTimeConstant = 0.0;
+    return a;
+  };
+  const inputScope = makeScopeAnalyser();
+  scopeAnalysers.push(inputScope);
+
+  stages = [makeStage(), makeStage(), makeStage(), makeStage()];
+  stages.forEach(() => scopeAnalysers.push(makeScopeAnalyser()));
+  mixAnalyser = makeScopeAnalyser();
+
+  // Web Audio feedback loops need a DelayNode in the cycle.
+  feedbackDelay = audioCtx.createDelay(0.1);
+  feedbackDelay.delayTime.value = 0.012;
+
+  osc.connect(oscGain);
+  oscGain.connect(inputGain);
+  mp3Gain.connect(inputGain);
+
+  inputGain.connect(dryGain);
+  inputGain.connect(stages[0].input);
+  inputGain.connect(scopeAnalysers[0]);
+
+  for (let i = 0; i < 3; i++) {
+    stages[i].output.connect(stages[i + 1].input);
+  }
+
+  // Observe each real stage output without changing its routing.
+  stages.forEach((stage, i) => stage.output.connect(scopeAnalysers[i + 1]));
+
+  stages[3].output.connect(wetGain);
+
+  // Stage 4 -> feedback amount -> short delay -> Stage 1.
+  stages[3].output.connect(feedbackGain);
+  feedbackGain.connect(feedbackDelay);
+  feedbackDelay.connect(stages[0].input);
+
+  // Tap the actual wet/dry sum before the master output.
+  dryGain.connect(mixAnalyser);
+  wetGain.connect(mixAnalyser);
+  mixAnalyser.connect(master);
+  master.connect(analyser);
+  analyser.connect(audioCtx.destination);
+
+  osc.start();
+}
+
+async function startAudio() {
+  try {
+    // Loading/decoding an MP3 creates audioCtx before playback, so checking
+    // only audioCtx is not enough. Build the processing graph whenever the
+    // graph itself has not yet been created.
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (!stages.length) createAudio();
+    if (audioCtx.state === "suspended") await audioCtx.resume();
+
+    if (sourceMode === "mp3") {
+      if (mp3Loading) {
+        document.getElementById("status").textContent = "Audio is still decoding…";
+        return;
+      }
+      if (!mp3Buffer) {
+        document.getElementById("status").textContent = "Choose an MP3/audio file first";
+        return;
+      }
+      if (!startMP3Source()) {
+        document.getElementById("status").textContent = "Could not start the MP3";
+        return;
+      }
+    }
+
+    running = true;
+    lastLfoTime = performance.now();
+    document.getElementById("status").textContent =
+      sourceMode === "mp3" ? "Playing MP3 through phaser" : "Running synthesizer";
+  } catch (err) {
+    console.error("Audio start error:", err);
+    document.getElementById("status").textContent =
+      "Audio could not start — check the browser console";
+  }
+}
+
+async function stopAudio() {
+  if (!audioCtx) return;
+
+  if (sourceMode === "mp3" && mp3Source) {
+    mp3Offset = Math.min(
+      mp3Buffer.duration,
+      Math.max(0, audioCtx.currentTime - mp3StartedAt + mp3Offset)
+    );
+    stopMP3Source();
+  }
+
+  await audioCtx.suspend();
+  running = false;
+  document.getElementById("status").textContent = "Audio stopped";
+}
+
+document.getElementById("startBtn").onclick = startAudio;
+document.getElementById("stopBtn").onclick = stopAudio;
+
+function drawGrid(ctx,w,h,rows=4,cols=8) {
+  ctx.strokeStyle = "#12323a";
+  ctx.lineWidth = 1;
+  for(let i=0;i<=rows;i++){
+    const y=i*h/rows;
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke();
+  }
+  for(let i=0;i<=cols;i++){
+    const x=i*w/cols;
+    ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke();
+  }
+}
+
+function drawWave(ctx, data, x,y,w,h, color, label, amp=1) {
+  ctx.strokeStyle=color;
+  ctx.lineWidth=1.5;
+  ctx.beginPath();
+  for(let i=0;i<data.length;i++){
+    const xx=x+i/(data.length-1)*w;
+    const yy=y+h/2 - data[i]*amp*h*0.40;
+    if(i===0) ctx.moveTo(xx,yy); else ctx.lineTo(xx,yy);
+  }
+  ctx.stroke();
+
+  ctx.fillStyle=color;
+  ctx.font="11px ui-monospace,monospace";
+  ctx.fillText(label,x+7,y+15);
+}
+
+function drawScope() {
+  const {w,h}=resizeCanvas(scope);
+  sctx.clearRect(0,0,w,h);
+  drawGrid(sctx,w,h,7,10);
+
+  const names = [
+    ["input","Input",COLORS[0]],
+    ["s1","Stage 1",COLORS[1]],
+    ["s2","Stage 2",COLORS[2]],
+    ["s3","Stage 3",COLORS[3]],
+    ["s4","Stage 4",COLORS[4]],
+    ["mixed","Dry + shifted",COLORS[5]],
+    ["output","Output",COLORS[6]]
+  ];
+
+  const rowH=h/names.length;
+  names.forEach((n,i)=>{
+    const yy=i*rowH;
+    // Separator
+    sctx.strokeStyle="#173a42";
+    sctx.beginPath(); sctx.moveTo(0,yy); sctx.lineTo(w,yy); sctx.stroke();
+    drawWave(sctx,history[n[0]],0,yy,w,rowH,n[2],n[1]);
+  });
+
+  sctx.fillStyle="#769b91";
+  sctx.font="10px ui-monospace,monospace";
+  sctx.fillText("−1",w-28,h-7);
+  sctx.fillText("0",w-20,h/2+3);
+  sctx.fillText("+1",w-28,12);
+}
+
+function drawSpectrum() {
+  const {w,h}=resizeCanvas(spectrumCanvas);
+  fctx.clearRect(0,0,w,h);
+  drawGrid(fctx,w,h,6,10);
+
+  if(!analyser) {
+    fctx.fillStyle="#6f958a";
+    fctx.font="12px ui-monospace,monospace";
+    fctx.fillText("Start audio to view the spectrum",20,30);
+    return;
+  }
+
+  const bins = new Float32Array(analyser.frequencyBinCount);
+  analyser.getFloatFrequencyData(bins);
+
+  const minDb=-90, maxDb=0;
+  fctx.strokeStyle="#35f0b0";
+  fctx.lineWidth=1.4;
+  fctx.beginPath();
+
+  // Logarithmic frequency axis, 20 Hz–20 kHz.
+  const fMin=20, fMax=Math.min(20000,audioCtx.sampleRate/2);
+  let started=false;
+  for(let i=1;i<bins.length;i++){
+    const f=i*audioCtx.sampleRate/(2*bins.length);
+    if(f<fMin || f>fMax) continue;
+    const x=(Math.log(f/fMin)/Math.log(fMax/fMin))*w;
+    const db=Math.max(minDb,Math.min(maxDb,bins[i]));
+    const y=(1-(db-minDb)/(maxDb-minDb))*h;
+    if(!started){fctx.moveTo(x,y);started=true;} else fctx.lineTo(x,y);
+  }
+  fctx.stroke();
+
+  // Moving estimated notch markers for a 4-stage all-pass phaser.
+  // These are illustrative markers rather than claiming exact circuit values.
+  const lfo = (Math.sin(lfoPhase*2*Math.PI)+1)/2;
+  const center=350 + lfo*2200*depth;
+  const ratios=[1,2.8,7.5,18];
+  fctx.setLineDash([5,5]);
+  ratios.forEach((r,idx)=>{
+    const f=Math.min(fMax,Math.max(fMin,center*r));
+    const x=(Math.log(f/fMin)/Math.log(fMax/fMin))*w;
+    fctx.strokeStyle=COLORS[idx];
+    fctx.beginPath(); fctx.moveTo(x,0); fctx.lineTo(x,h); fctx.stroke();
+  });
+  fctx.setLineDash([]);
+
+  fctx.fillStyle="#7fa69c";
+  fctx.font="10px ui-monospace,monospace";
+  [20,100,500,1000,5000,10000,20000].forEach(f=>{
+    if(f>fMax)return;
+    const x=(Math.log(f/fMin)/Math.log(fMax/fMin))*w;
+    fctx.fillText(f>=1000?(f/1000)+"k":f,x+2,h-7);
+  });
+  fctx.fillStyle="#5dffd0";
+  fctx.fillText("Amplitude / dB",8,14);
+}
+
+function updatePhaserAudio(nowMs) {
+  if (!audioCtx || !stages.length || audioCtx.state !== "running") {
+    lastLfoTime = nowMs;
+    return;
+  }
+
+  const dt = Math.min(0.05, Math.max(0, (nowMs - lastLfoTime) / 1000));
+  lastLfoTime = nowMs;
+
+  // Keep our visual LFO phase in sync with the actual audio-rate sweep.
+  lfoPhase = (lfoPhase + dt * lfoRate) % 1;
+
+  // IMPORTANT: drive the actual BiquadFilter frequency AudioParams here.
+  // Using a direct value at every animation frame is deliberately simple and
+  // works reliably with decoded MP3 audio as well as the synthesizer.
+  //
+  // The sweep is centred in logarithmic frequency space. Depth determines
+  // the amount of movement around that centre, rather than merely changing
+  // the upper endpoint of the sweep. This makes 0% = stationary and 100% =
+  // a large, obvious phaser sweep.
+  const phase = lfoPhase * Math.PI * 2;
+  const lfo = Math.sin(phase);
+  const minFc = 140;
+  const maxFc = 6200;
+  const centre = Math.sqrt(minFc * maxFc);
+  const halfRange = Math.log(maxFc / minFc) * 0.5;
+  const sweep = lfo * halfRange * depth;
+  const baseFc = centre * Math.exp(sweep);
+
+  // Slightly different frequency ranges for the four stages give the
+  // cascaded phaser its characteristic broad set of moving notches.
+  const stagger = [0.72, 0.94, 1.22, 1.58];
+  const t = audioCtx.currentTime;
+  const maxAllowed = audioCtx.sampleRate * 0.45;
+
+  stages.forEach((stage, i) => {
+    const stageFc = Math.max(40, Math.min(maxAllowed, baseFc * stagger[i]));
+
+    // setValueAtTime avoids accumulating automation events and makes the
+    // control visibly/audibly responsive when the rate or depth sliders move.
+    stage.ap.frequency.cancelScheduledValues(t);
+    stage.ap.frequency.setValueAtTime(stageFc, t);
+  });
+
+  if (feedbackGain) {
+    feedbackGain.gain.setTargetAtTime(feedback, t, 0.01);
+  }
+}
+
+function drawLFO() {
+  const {w,h}=resizeCanvas(lfoCanvas);
+  lctx.clearRect(0,0,w,h);
+  drawGrid(lctx,w,h,4,8);
+
+  const pos=lfoPhase;
+
+  lctx.strokeStyle="#28e7a8";
+  lctx.lineWidth=1.6;
+  lctx.beginPath();
+  for(let i=0;i<=300;i++){
+    const t=i/300;
+    const v=Math.sin((t*2*Math.PI));
+    const x=t*w;
+    const y=h/2-v*(h*0.36);
+    if(i===0)lctx.moveTo(x,y);else lctx.lineTo(x,y);
+  }
+  lctx.stroke();
+
+  const x=pos*w;
+  const v=Math.sin(pos*2*Math.PI);
+  const y=h/2-v*(h*0.36);
+
+  lctx.strokeStyle="#fff";
+  lctx.beginPath();lctx.moveTo(x,0);lctx.lineTo(x,h);lctx.stroke();
+  lctx.fillStyle="#fff";
+  lctx.beginPath();lctx.arc(x,y,5,0,Math.PI*2);lctx.fill();
+
+  const phaseDeg=Math.round((pos*360)%360);
+  ["p1","p2","p3","p4"].forEach((id,i)=>{
+    const value=Math.round((phaseDeg*(i+1)*depth));
+    document.getElementById(id).textContent=`${value % 360}° nominal sweep`;
+  });
+}
+
+function updateHistory() {
+  if (!analyser || !scopeAnalysers.length) return;
+
+  const N = history.input.length;
+
+  // Read the actual audio at every point in the signal chain. This is
+  // especially important for MP3 playback: the previous version generated
+  // synthetic sine/saw traces for the input and all four stages, so those
+  // displays could remain visually static while the MP3 was playing.
+  const traces = scopeAnalysers.map(a => {
+    const buf = new Float32Array(a.fftSize);
+    a.getFloatTimeDomainData(buf);
+    return buf;
+  });
+
+  const outputBuf = new Float32Array(analyser.fftSize);
+  analyser.getFloatTimeDomainData(outputBuf);
+
+  const mixBuf = new Float32Array(mixAnalyser.fftSize);
+  mixAnalyser.getFloatTimeDomainData(mixBuf);
+
+  const sampleAt = (buf, i) => {
+    // Use the most recent N samples, resampled to the display width.
+    const start = Math.max(0, buf.length - N);
+    const span = buf.length - start;
+    const index = start + Math.min(span - 1, Math.floor(i * span / N));
+    return buf[index] || 0;
+  };
+
+  for (let i = 0; i < N; i++) {
+    history.input[i] = sampleAt(traces[0], i);
+    history.s1[i] = sampleAt(traces[1], i);
+    history.s2[i] = sampleAt(traces[2], i);
+    history.s3[i] = sampleAt(traces[3], i);
+    history.s4[i] = sampleAt(traces[4], i);
+    history.mixed[i] = sampleAt(mixBuf, i);
+    history.output[i] = sampleAt(outputBuf, i);
+  }
+}
+function animate(now){
+  updatePhaserAudio(now || performance.now());
+  updateHistory();
+  drawScope();
+  drawSpectrum();
+  drawLFO();
+  requestAnimationFrame(animate);
+}
+
+updateUI();
+animate();
+</script>
+</body>
+</html>
