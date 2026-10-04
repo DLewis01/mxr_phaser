@@ -1,4 +1,4 @@
-# mxr_phaser
+# MXR phase 90
 A software implementation of a MXR phaser 90
 A phaser pedal creates a "swooshing" or swirling sound by splitting the audio signal, shifting the phase of part of it, and recombining them to produce moving peaks and notches in the frequency spectrum
   <p>      
